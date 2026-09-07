@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import joblib
 import folium
+import json
 from streamlit_folium import st_folium
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
@@ -11,11 +12,9 @@ st.set_page_config(page_title="Mansehra Flood Risk Dashboard", layout="wide")
 
 FEATURES = ["dist_water", "elevation", "landcover", "rainfall", "slope"]
 
-# ---------------- Sidebar ----------------
-st.sidebar.title(" Navigation")
+st.sidebar.title("Navigation")
 page = st.sidebar.radio("Go to", ["Overview", "Risk Map", "Model Performance", "Feature Importance", "Predict Location"])
 
-# ---------------- Load saved files ----------------
 @st.cache_resource
 def load_model():
     return joblib.load("model.pkl")
@@ -28,13 +27,18 @@ def load_test_data():
 def load_map_data():
     return pd.read_csv("map_data.csv")
 
+@st.cache_data
+def load_boundary():
+    with open("mansehra_boundary.geojson") as f:
+        return json.load(f)
+
 model = load_model()
 test_data = load_test_data()
 map_data = load_map_data()
+boundary = load_boundary()
 
-# ================= OVERVIEW =================
 if page == "Overview":
-    st.title(" Mansehra District Flood Risk Prediction Dashboard")
+    st.title("Mansehra District Flood Risk Prediction Dashboard")
     st.markdown("""
     ### Machine Learning-Based Flood Risk Prediction for Mansehra District
 
@@ -53,22 +57,19 @@ if page == "Overview":
     col2.metric("Model Accuracy", f"{accuracy_score(test_data['actual'], test_data['predicted'])*100:.1f}%")
     col3.metric("Flood-Risk Points (Actual)", int(test_data['actual'].sum()))
 
-# ================= RISK MAP (CLICKABLE) =================
 elif page == "Risk Map":
-    st.header(" Interactive Flood Risk Map — Mansehra District")
-    st.markdown("Click anywhere on the map to see flood risk for the **nearest known data point**. Red = High Risk, Green = Low Risk.")
-   (center_lat, center_lon = 34.33, 73.24)
+    st.header("Interactive Flood Risk Map - Mansehra District")
+    st.markdown("Click anywhere on the map to see flood risk for the nearest known data point. Red = High Risk, Green = Low Risk.")
+
+    center_lat, center_lon = 34.33, 73.24
     m = folium.Map(location=[center_lat, center_lon], zoom_start=10, tiles="OpenStreetMap")
-    import json
-    with open("mansehra_boundary.geojson") as f:
-        boundary = json.load(f)
+
     folium.GeoJson(
         boundary,
         style_function=lambda x: {"fillColor": "transparent", "color": "blue", "weight": 3}
     ).add_to(m)
 
-       
-  for _, row in map_data.iterrows():
+    for _, row in map_data.iterrows():
         color = "red" if row["flood_label"] == 1 else "green"
         folium.CircleMarker(
             location=[row["lat"], row["lon"]],
@@ -77,7 +78,7 @@ elif page == "Risk Map":
             fill=True,
             fill_color=color,
             fill_opacity=0.7,
-            popup=f"Elevation: {row['elevation']}m<br>Rainfall: {row['rainfall']}mm<br>Risk: {'HIGH' if row['flood_label']==1 else 'LOW'}"
+            popup=f"Elevation: {row['elevation']}m Rainfall: {row['rainfall']}mm Risk: {'HIGH' if row['flood_label']==1 else 'LOW'}"
         ).add_to(m)
 
     map_output = st_folium(m, width=1000, height=550)
@@ -93,20 +94,19 @@ elif page == "Risk Map":
         prob = model.predict_proba(input_df)[0][1]
         pred = model.predict(input_df)[0]
 
-        st.subheader(" Nearest Data Point to Your Click")
+        st.subheader("Nearest Data Point to Your Click")
         col1, col2, col3 = st.columns(3)
         col1.metric("Elevation", f"{nearest['elevation']:.0f} m")
         col2.metric("Rainfall", f"{nearest['rainfall']:.2f} mm")
         col3.metric("Flood Risk Probability", f"{prob*100:.1f}%")
 
         if pred == 1:
-            st.error(" HIGH FLOOD RISK at this location")
+            st.error("HIGH FLOOD RISK at this location")
         else:
             st.success("LOW FLOOD RISK at this location")
 
-# ================= MODEL PERFORMANCE =================
 elif page == "Model Performance":
-    st.header(" Model Performance")
+    st.header("Model Performance")
     acc = accuracy_score(test_data["actual"], test_data["predicted"])
     prec = precision_score(test_data["actual"], test_data["predicted"])
     rec = recall_score(test_data["actual"], test_data["predicted"])
@@ -132,15 +132,13 @@ elif page == "Model Performance":
     st.subheader("Saved Confusion Matrices (All Models)")
     st.image("confusion_matrices.png")
 
-# ================= FEATURE IMPORTANCE =================
 elif page == "Feature Importance":
     st.header("Feature Importance (SHAP)")
     st.image("shap_summary.png", caption="SHAP Summary Plot")
     st.markdown("This shows which features (elevation, slope, rainfall, land cover, distance to water) most influence the model's flood risk predictions.")
 
-# ================= PREDICT LOCATION =================
 elif page == "Predict Location":
-    st.header(" Predict Flood Risk for a Location")
+    st.header("Predict Flood Risk for a Location")
     st.markdown("Enter values manually to get a flood risk prediction:")
 
     col1, col2 = st.columns(2)
@@ -158,6 +156,6 @@ elif page == "Predict Location":
         prob = model.predict_proba(input_df)[0][1]
         st.metric("Flood Risk Probability", f"{prob*100:.1f}%")
         if pred == 1:
-            st.error(" HIGH FLOOD RISK")
+            st.error("HIGH FLOOD RISK")
         else:
             st.success("LOW FLOOD RISK")
