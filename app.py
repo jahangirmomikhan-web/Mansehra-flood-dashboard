@@ -57,7 +57,7 @@ if page == "Overview":
 elif page == "Risk Map":
     st.header(" Interactive Flood Risk Map — Mansehra District")
     st.markdown("Click anywhere on the map to see flood risk for the **nearest known data point**. Red = High Risk, Green = Low Risk.")
-   center_lat, center_lon = 34.33, 73.24
+   (center_lat, center_lon = 34.33, 73.24)
     m = folium.Map(location=[center_lat, center_lon], zoom_start=10, tiles="OpenStreetMap")
     import json
     with open("mansehra_boundary.geojson") as f:
