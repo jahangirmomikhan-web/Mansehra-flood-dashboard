@@ -57,11 +57,18 @@ if page == "Overview":
 elif page == "Risk Map":
     st.header(" Interactive Flood Risk Map — Mansehra District")
     st.markdown("Click anywhere on the map to see flood risk for the **nearest known data point**. Red = High Risk, Green = Low Risk.")
-
-    center_lat, center_lon = 34.33, 73.24
+   center_lat, center_lon = 34.33, 73.24
     m = folium.Map(location=[center_lat, center_lon], zoom_start=10, tiles="OpenStreetMap")
+    import json
+    with open("mansehra_boundary.geojson") as f:
+        boundary = json.load(f)
+    folium.GeoJson(
+        boundary,
+        style_function=lambda x: {"fillColor": "transparent", "color": "blue", "weight": 3}
+    ).add_to(m)
 
-    for _, row in map_data.iterrows():
+       
+  for _, row in map_data.iterrows():
         color = "red" if row["flood_label"] == 1 else "green"
         folium.CircleMarker(
             location=[row["lat"], row["lon"]],
