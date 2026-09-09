@@ -1,3 +1,4 @@
+%%writefile app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -12,9 +13,11 @@ st.set_page_config(page_title="Mansehra Flood Risk Dashboard", layout="wide")
 
 FEATURES = ["dist_water", "elevation", "landcover", "rainfall", "slope"]
 
-st.sidebar.title("Navigation")
+# ---------------- Sidebar ----------------
+st.sidebar.title(" Navigation")
 page = st.sidebar.radio("Go to", ["Overview", "Risk Map", "Model Performance", "Feature Importance", "Predict Location"])
 
+# ---------------- Load saved files ----------------
 @st.cache_resource
 def load_model():
     return joblib.load("model.pkl")
@@ -37,8 +40,9 @@ test_data = load_test_data()
 map_data = load_map_data()
 boundary = load_boundary()
 
+# ================= OVERVIEW =================
 if page == "Overview":
-    st.title("Mansehra District Flood Risk Prediction Dashboard")
+    st.title(" Mansehra District Flood Risk Prediction Dashboard")
     st.markdown("""
     ### Machine Learning-Based Flood Risk Prediction for Mansehra District
 
@@ -57,15 +61,17 @@ if page == "Overview":
     col2.metric("Model Accuracy", f"{accuracy_score(test_data['actual'], test_data['predicted'])*100:.1f}%")
     col3.metric("Flood-Risk Points (Actual)", int(test_data['actual'].sum()))
 
+# ================= RISK MAP (CLICKABLE WITH BOUNDARY) =================
 elif page == "Risk Map":
-    st.header("Interactive Flood Risk Map - Mansehra District")
-    st.markdown("Click anywhere on the map to see flood risk for the nearest known data point. Red = High Risk, Green = Low Risk.")
+    st.header("Interactive Flood Risk Map — Mansehra District")
+    st.markdown("Click anywhere inside the district boundary to see flood risk for the **nearest known data point**. Red = High Risk, Green = Low Risk.")
 
     center_lat, center_lon = 34.33, 73.24
     m = folium.Map(location=[center_lat, center_lon], zoom_start=10, tiles="OpenStreetMap")
 
     folium.GeoJson(
         boundary,
+        name="Mansehra Boundary",
         style_function=lambda x: {"fillColor": "transparent", "color": "blue", "weight": 3}
     ).add_to(m)
 
@@ -78,7 +84,7 @@ elif page == "Risk Map":
             fill=True,
             fill_color=color,
             fill_opacity=0.7,
-            popup=f"Elevation: {row['elevation']}m Rainfall: {row['rainfall']}mm Risk: {'HIGH' if row['flood_label']==1 else 'LOW'}"
+            popup=f"Elevation: {row['elevation']}m<br>Rainfall: {row['rainfall']}mm<br>Risk: {'HIGH' if row['flood_label']==1 else 'LOW'}"
         ).add_to(m)
 
     map_output = st_folium(m, width=1000, height=550)
@@ -94,19 +100,20 @@ elif page == "Risk Map":
         prob = model.predict_proba(input_df)[0][1]
         pred = model.predict(input_df)[0]
 
-        st.subheader("Nearest Data Point to Your Click")
+        st.subheader(" Nearest Data Point to Your Click")
         col1, col2, col3 = st.columns(3)
         col1.metric("Elevation", f"{nearest['elevation']:.0f} m")
         col2.metric("Rainfall", f"{nearest['rainfall']:.2f} mm")
         col3.metric("Flood Risk Probability", f"{prob*100:.1f}%")
 
         if pred == 1:
-            st.error("HIGH FLOOD RISK at this location")
+            st.error(" HIGH FLOOD RISK at this location")
         else:
-            st.success("LOW FLOOD RISK at this location")
+            st.success(" LOW FLOOD RISK at this location")
 
+# ================= MODEL PERFORMANCE =================
 elif page == "Model Performance":
-    st.header("Model Performance")
+    st.header(" Model Performance")
     acc = accuracy_score(test_data["actual"], test_data["predicted"])
     prec = precision_score(test_data["actual"], test_data["predicted"])
     rec = recall_score(test_data["actual"], test_data["predicted"])
@@ -132,11 +139,14 @@ elif page == "Model Performance":
     st.subheader("Saved Confusion Matrices (All Models)")
     st.image("confusion_matrices.png")
 
+# ================= FEATURE IMPORTANCE =================
 elif page == "Feature Importance":
-    st.header("Feature Importance (SHAP)")
+    st.header(" Feature Importance (SHAP)")
     st.image("shap_summary.png", caption="SHAP Summary Plot")
     st.markdown("This shows which features (elevation, slope, rainfall, land cover, distance to water) most influence the model's flood risk predictions.")
 
+# ================= PREDICT LOCATION =================
+# ================== PREDICT LOCATION ==================
 elif page == "Predict Location":
     st.header("Predict Flood Risk for a Location")
     st.markdown("Enter values manually to get a flood risk prediction:")
@@ -154,8 +164,52 @@ elif page == "Predict Location":
         input_df = pd.DataFrame([[dist_water, elevation, landcover, rainfall, slope]], columns=FEATURES)
         pred = model.predict(input_df)[0]
         prob = model.predict_proba(input_df)[0][1]
+
         st.metric("Flood Risk Probability", f"{prob*100:.1f}%")
-        if pred == 1:
-            st.error("HIGH FLOOD RISK")
+        st.progress(min(int(prob * 100), 100))
+
+        # --- 5-level risk scale ---
+        if prob < 0.20:
+            risk_label = "VERY LOW FLOOD RISK"
+            st.success(risk_label)
+        elif prob < 0.40:
+            risk_label = "LOW FLOOD RISK"
+            st.success(risk_label)
+        elif prob < 0.60:
+            risk_label = "MODERATE FLOOD RISK"
+            st.warning(risk_label)
+        elif prob < 0.80:
+            risk_label = "HIGH FLOOD RISK"
+            st.error(risk_label)
         else:
-            st.success("LOW FLOOD RISK")
+            risk_label = "VERY HIGH FLOOD RISK"
+            st.error(risk_label)
+
+        # --- Why this prediction? (live SHAP explanation) ---
+        st.subheader("Why this prediction?")
+        try:
+            import shap
+            explainer = shap.TreeExplainer(model)
+            raw_sv = explainer.shap_values(input_df)
+
+            if isinstance(raw_sv, list):
+                sv = raw_sv[1][0]
+            else:
+                sv = raw_sv[0]
+                if hasattr(sv, "ndim") and sv.ndim > 1:
+                    sv = sv[:, 1]
+
+            feature_labels = ["Distance to Water", "Elevation", "Land Cover", "Rainfall", "Slope"]
+            contrib = pd.DataFrame({"Feature": feature_labels, "SHAP Value": sv})
+            contrib = contrib.reindex(contrib["SHAP Value"].abs().sort_values(ascending=False).index)
+
+            for _, row in contrib.iterrows():
+                if row["SHAP Value"] > 0.01:
+                    st.write(f"🔴 **{row['Feature']}** → increases risk (impact: {row['SHAP Value']:.3f})")
+                elif row["SHAP Value"] < -0.01:
+                    st.write(f"🟢 **{row['Feature']}** → decreases risk (impact: {row['SHAP Value']:.3f})")
+                else:
+                    st.write(f"⚪ **{row['Feature']}** → minimal contribution (impact: {row['SHAP Value']:.3f})")
+        except Exception as e:
+            st.info("Detailed explanation unavailable for this input (SHAP could not be computed).")  
+
